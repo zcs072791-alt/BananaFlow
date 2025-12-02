@@ -1,0 +1,5 @@
+{
+  "name": "BananaFlow AI Canvas",
+  "description": "基于 Gemini Nano Banana 模型无限工作流画布。使用节点式工作流创建、编辑和放大图片。",
+  "requestFramePermissions": []
+}
