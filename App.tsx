@@ -47,7 +47,7 @@ import {
   generatePoseFromText,
   generateEcommerceImage
 } from './services/geminiService';
-import { saveAutoSnapshot, getSnapshots, WorkflowSnapshot } from './services/storageService';
+import { saveAutoSnapshot, getSnapshots, WorkflowSnapshot, saveWorkflowToFile } from './services/storageService';
 import { ToastContainer, ToastMessage, ToastType } from './components/ui/Toast';
 import { RestoreModal } from './components/ui/RestoreModal';
 import { Activity } from 'lucide-react';
@@ -95,22 +95,6 @@ const getNodeImage = (node: AppNode | undefined, currentNodes: AppNode[], curren
         }
     }
     return undefined;
-};
-
-const formatBytes = (bytes: number, decimals = 1) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-};
-
-const getBase64Size = (base64String: string) => {
-    let padding = 0;
-    if (base64String.endsWith('==')) padding = 2;
-    else if (base64String.endsWith('=')) padding = 1;
-    return (base64String.length * (3 / 4)) - padding;
 };
 
 // BananaFlow component starts
@@ -297,7 +281,6 @@ const BananaFlow = () => {
       }
       
       // FALLBACK: Use generated result as input if available (Chaining)
-      // This allows generating a model and then extracting from it in the same node sequence or same node
       if (!modelImg && currentNode?.data.image && (mode === 'extract' || mode === 'try_on')) {
           modelImg = currentNode.data.image;
       }
@@ -369,16 +352,6 @@ const BananaFlow = () => {
           addToast("提取失败: " + e.message, "error");
       }
   }, [getNodes, getEdges, updateNodeData, addToast]);
-
-  // Generic handlers map
-  const handlers: Record<string, (id: string, payload?: any) => void> = {
-      [NodeType.GENERATE]: handleGenerate,
-      [NodeType.POSE]: handlePoseAction,
-      [NodeType.DRAW]: handleDraw,
-      [NodeType.CHARACTER_EDIT]: handleCharacterEdit,
-      [NodeType.ECOMMERCE]: handleEcommerce,
-      [NodeType.IMAGE_TO_TEXT]: handleImageToText,
-  };
 
   const hydrateNode = useCallback((node: AppNode): AppNode => {
       return {
@@ -463,9 +436,33 @@ const BananaFlow = () => {
       }
   }, [isRestored, getNodes, getEdges]);
 
+  // Handle Workflow Save / Load
+  const handleSaveWorkflow = useCallback(() => {
+      saveWorkflowToFile(getNodes(), getEdges());
+  }, [getNodes, getEdges]);
+
+  const handleRestoreWorkflow = useCallback((flow: { nodes: AppNode[], edges: AppEdge[] }) => {
+      // Clear current flow
+      setNodes([]);
+      setEdges([]);
+      
+      setTimeout(() => {
+          // Re-hydrate nodes with handlers and restore state
+          const hydratedNodes = flow.nodes.map(node => hydrateNode(node));
+          setNodes(hydratedNodes);
+          setEdges(flow.edges);
+          setTimeout(() => fitView({ padding: 0.2 }), 100);
+          addToast("工作流导入成功", "success");
+      }, 50);
+  }, [hydrateNode, setNodes, setEdges, fitView, addToast]);
+
   return (
     <div className="flex h-screen w-screen bg-black overflow-hidden font-sans relative">
-      <Sidebar onSave={() => {}} onLoad={() => {}} onClear={() => { setNodes([]); setEdges([]); }} />
+      <Sidebar 
+          onSave={handleSaveWorkflow} 
+          onRestore={handleRestoreWorkflow} 
+          onClear={() => { setNodes([]); setEdges([]); }} 
+      />
       <div className="flex-grow h-full relative" ref={reactFlowWrapper}>
         <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onDrop={onDrop} onDragOver={(e)=>e.preventDefault()} nodeTypes={nodeTypes} fitView className="bg-black">
           <Background color="#333" gap={20} variant={BackgroundVariant.Dots} />

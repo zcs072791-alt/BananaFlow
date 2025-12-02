@@ -1,4 +1,3 @@
-
 import { AppNode, AppEdge } from '../types';
 
 const DB_NAME = 'BananaFlowDB';
@@ -39,8 +38,6 @@ const openDB = (): Promise<IDBDatabase> => {
 };
 
 // Helper to remove functions from node data for storage
-// IndexedDB cannot clone functions, so we must strip them out.
-// They will be re-attached by hydrateNode in App.tsx upon restoration.
 const sanitizeNodes = (nodes: AppNode[]): AppNode[] => {
   return nodes.map(node => {
     const cleanData: any = {};
@@ -66,16 +63,13 @@ export const saveAutoSnapshot = async (nodes: AppNode[], edges: AppEdge[]): Prom
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
 
-    // CRITICAL FIX: Sanitize nodes to remove functions before saving
     const cleanNodes = sanitizeNodes(nodes);
 
-    // 1. Get all existing keys
     const keysRequest = store.getAllKeys();
     
     keysRequest.onsuccess = async () => {
       const keys = keysRequest.result as string[];
       
-      // 2. Prepare new snapshot
       const now = Date.now();
       const snapshot: WorkflowSnapshot = {
         id: now.toString(),
@@ -84,14 +78,9 @@ export const saveAutoSnapshot = async (nodes: AppNode[], edges: AppEdge[]): Prom
         flow: { nodes: cleanNodes, edges }
       };
 
-      // 3. Add new snapshot
       store.add(snapshot);
 
-      // 4. Delete oldest if we have more than MAX
-      // We added one, so if keys.length >= MAX, we need to remove (keys.length + 1 - MAX)
       if (keys.length >= MAX_SNAPSHOTS) {
-        // Sort keys (timestamps) to find oldest. 
-        // Note: getAllKeys usually returns sorted, but let's be safe if IDs are comparable strings
         keys.sort(); 
         const deleteCount = (keys.length + 1) - MAX_SNAPSHOTS;
         for (let i = 0; i < deleteCount; i++) {
@@ -115,7 +104,6 @@ export const getSnapshots = async (): Promise<WorkflowSnapshot[]> => {
 
       request.onsuccess = () => {
         const results = request.result as WorkflowSnapshot[];
-        // Sort by timestamp descending (newest first)
         if (results && results.length > 0) {
             results.sort((a, b) => b.timestamp - a.timestamp);
         }
@@ -139,4 +127,43 @@ export const clearSnapshots = async (): Promise<void> => {
     } catch (error) {
         console.error("Failed to clear snapshots:", error);
     }
+};
+
+// --- FILE OPERATIONS ---
+
+export const saveWorkflowToFile = (nodes: AppNode[], edges: AppEdge[]) => {
+    const cleanNodes = sanitizeNodes(nodes);
+    const flow = { nodes: cleanNodes, edges };
+    
+    const jsonString = JSON.stringify(flow, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bananaflow-workflow-${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
+export const parseWorkflowFile = (file: File): Promise<{ nodes: AppNode[], edges: AppEdge[] }> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const json = JSON.parse(e.target?.result as string);
+                if (Array.isArray(json.nodes) && Array.isArray(json.edges)) {
+                    resolve(json);
+                } else {
+                    reject(new Error("Invalid workflow file format: Missing nodes or edges array"));
+                }
+            } catch (err) {
+                reject(err);
+            }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file);
+    });
 };

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { NodeType } from '../types';
+import { NodeType, AppNode, AppEdge } from '../types';
 import { 
   MessageSquare, 
   Wand2, 
@@ -18,14 +18,15 @@ import {
   Expand,
   Minimize2
 } from 'lucide-react';
+import { parseWorkflowFile } from '../services/storageService';
 
 interface SidebarProps {
   onSave?: () => void;
-  onLoad?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRestore?: (flow: { nodes: AppNode[]; edges: AppEdge[] }) => void;
   onClear?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onSave, onLoad, onClear }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ onSave, onRestore, onClear }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const onDragStart = (event: React.DragEvent, nodeType: NodeType) => {
@@ -35,6 +36,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSave, onLoad, onClear }) => 
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && onRestore) {
+        try {
+            const flow = await parseWorkflowFile(file);
+            onRestore(flow);
+        } catch (e) {
+            console.error("Failed to load workflow", e);
+            alert("导入失败: 文件格式错误");
+        }
+    }
+    event.target.value = '';
   };
 
   return (
@@ -235,7 +250,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onSave, onLoad, onClear }) => 
             <input 
                 type="file" 
                 ref={fileInputRef} 
-                onChange={onLoad} 
+                onChange={handleFileChange} 
                 accept=".json" 
                 className="hidden" 
             />
